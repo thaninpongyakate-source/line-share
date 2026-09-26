@@ -15,18 +15,18 @@
       align-items: center;
       min-height: 100vh;
       margin: 0;
-      background: #f8f9fa;
+      background: #f4f5f7;
       color: #333;
       text-align: center;
       padding: 16px;
     }
     .card {
       background: white;
-      padding: 36px 28px;
+      padding: 32px 24px;
       border-radius: 20px;
       box-shadow: 0 8px 30px rgba(0,0,0,0.08);
       width: 100%;
-      max-width: 340px;
+      max-width: 360px;
     }
     .loader {
       border: 4px solid #edf2f7;
@@ -39,19 +39,20 @@
     }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     .title { font-weight: 600; font-size: 17px; margin-bottom: 8px; color: #1a202c; }
-    .desc { font-size: 14px; color: #718096; line-height: 1.4; }
-    .btn-close {
-      display: none;
-      margin-top: 20px;
-      background: #06C755;
-      color: white;
-      border: none;
-      padding: 10px 24px;
+    .desc { font-size: 13px; color: #718096; line-height: 1.5; margin-bottom: 12px; }
+    .btn {
+      display: inline-block;
+      margin: 6px 4px;
+      padding: 10px 20px;
       border-radius: 8px;
       font-size: 14px;
       font-weight: 600;
       cursor: pointer;
+      text-decoration: none;
+      border: none;
     }
+    .btn-primary { background: #06C755; color: white; }
+    .btn-secondary { background: #e2e8f0; color: #4a5568; }
   </style>
 </head>
 <body>
@@ -59,17 +60,17 @@
     <div class="loader" id="loader"></div>
     <div class="title" id="statusTitle">กำลังเปิดรายชื่อเพื่อน...</div>
     <div class="desc" id="statusDesc">กรุณารอสักครู่</div>
-    <button class="btn-close" id="btnClose" onclick="closeApp()">ปิดหน้านี้</button>
+    <button class="btn btn-primary" id="btnClose" onclick="closeApp()" style="display: none; margin-top: 14px;">ปิดหน้านี้</button>
   </div>
 
   <script>
     // รหัส LIFF ID ของคุณ
     const LIFF_ID = "2011037822-0aHJEkUs";
 
-    function updateStatus(title, desc, showClose = false) {
+    function updateStatus(title, desc, isDone = false) {
       document.getElementById('statusTitle').innerText = title;
       if (desc) document.getElementById('statusDesc').innerText = desc;
-      if (showClose) {
+      if (isDone) {
         document.getElementById('loader').style.display = 'none';
         document.getElementById('btnClose').style.display = 'inline-block';
       }
@@ -89,21 +90,22 @@
       try {
         await liff.init({ liffId: LIFF_ID });
 
-        // ถ้าเปิดนอกแอป LINE (เช่น บน PC Browser) แล้วยังไม่ได้ล็อกอิน
+        // ถ้าเปิดบนเบราว์เซอร์ภายนอกแล้วยังไม่ได้ล็อกอิน
         if (!liff.isLoggedIn()) {
           liff.login();
           return;
         }
 
-        // ดึงพารามิเตอร์จาก URL
+        // ดึงข้อมูลสินค้าจาก URL
         const urlParams = new URLSearchParams(window.location.search);
         let name = urlParams.get('name') || 'สินค้าแนะนำ';
         let sku = urlParams.get('sku') || '-';
         let price = urlParams.get('price') || '0';
         let stock = urlParams.get('stock') || 'มีสินค้า';
-        let img = urlParams.get('img') || 'https://placehold.co/600x400/png?text=Product';
+        let img = urlParams.get('img') || '';
+        let oaUrl = urlParams.get('oa') || '';
 
-        // รองรับกรณี LINE แอบซ่อน query ไว้ใน liff.state
+        // กรณี LINE ซ่อน query ไว้ใน liff.state
         if (urlParams.get('liff.state')) {
           const stateParams = new URLSearchParams(decodeURIComponent(urlParams.get('liff.state')));
           if (stateParams.get('name')) name = stateParams.get('name');
@@ -111,66 +113,104 @@
           if (stateParams.get('price')) price = stateParams.get('price');
           if (stateParams.get('stock')) stock = stateParams.get('stock');
           if (stateParams.get('img')) img = stateParams.get('img');
+          if (stateParams.get('oa')) oaUrl = stateParams.get('oa');
+        }
+
+        const isOutOfStock = stock.includes('0') || stock.includes('หมด');
+        const stockBadgeColor = isOutOfStock ? '#D9534F' : '#28A745';
+
+        // โครงสร้างการ์ด Flex Message (มาตรฐานที่ LINE อนุญาตให้ส่งผ่าน Share Target Picker)
+        const flexBubble = {
+          type: "bubble",
+          size: "kilo",
+          body: {
+            type: "box",
+            layout: "vertical",
+            spacing: "sm",
+            contents: [
+              {
+                type: "text",
+                text: name,
+                weight: "bold",
+                size: "md",
+                wrap: true
+              },
+              {
+                type: "text",
+                text: "รหัส: " + sku,
+                size: "xs",
+                color: "#888888"
+              },
+              {
+                type: "box",
+                layout: "baseline",
+                contents: [
+                  {
+                    type: "text",
+                    text: price,
+                    weight: "bold",
+                    size: "xl",
+                    color: "#E03131",
+                    flex: 0
+                  },
+                  {
+                    type: "text",
+                    text: " บาท",
+                    size: "sm",
+                    color: "#666666"
+                  }
+                ]
+              },
+              {
+                type: "text",
+                text: stock,
+                size: "xs",
+                weight: "bold",
+                color: stockBadgeColor
+              }
+            ]
+          }
+        };
+
+        // ใส่รูปภาพเมื่อเป็น HTTPS ที่ถูกต้องเท่านั้น
+        if (img && img.startsWith('https://')) {
+          flexBubble.hero = {
+            type: "image",
+            url: img,
+            size: "full",
+            aspectRatio: "20:13",
+            aspectMode: "cover"
+          };
+        }
+
+        // ข้อสำคัญ: ใน Share Target Picker จะต้องใช้ปุ่มประเภท "uri" เท่านั้น
+        // (LINE ไม่อนุญาตให้ใช้ประเภท "message" หรือ "postback" ในการแชร์ระหว่างผู้ใช้)
+        if (oaUrl && oaUrl.startsWith('https://')) {
+          flexBubble.footer = {
+            type: "box",
+            layout: "vertical",
+            spacing: "sm",
+            contents: [
+              {
+                type: "button",
+                style: "primary",
+                color: "#06C755",
+                height: "sm",
+                action: {
+                  type: "uri",
+                  label: "💬 สนใจสั่งซื้อ / ติดต่อร้าน",
+                  uri: oaUrl
+                }
+              }
+            ]
+          };
         }
 
         if (liff.isApiAvailable('shareTargetPicker')) {
-          const isOutOfStock = stock.includes('0') || stock.includes('หมด');
-          const stockBadgeColor = isOutOfStock ? '#D9534F' : '#28A745';
-
-          // โครงสร้างการ์ด Flex Message ที่จะแชร์เข้าแชทเพื่อน
-          const flexBubble = {
-            type: "bubble",
-            size: "kilo",
-            hero: {
-              type: "image",
-              url: img,
-              size: "full",
-              aspectRatio: "20:13",
-              aspectMode: "cover"
-            },
-            body: {
-              type: "box",
-              layout: "vertical",
-              spacing: "sm",
-              contents: [
-                { type: "text", text: name, weight: "bold", size: "md", wrap: true },
-                { type: "text", text: "รหัส: " + sku, size: "xs", color: "#888888" },
-                {
-                  type: "box",
-                  layout: "baseline",
-                  contents: [
-                    { type: "text", text: price, weight: "bold", size: "xl", color: "#E03131", flex: 0 },
-                    { type: "text", text: " บาท", size: "sm", color: "#666666" }
-                  ]
-                },
-                { type: "text", text: stock, size: "xs", weight: "bold", color: stockBadgeColor }
-              ]
-            },
-            footer: {
-              type: "box",
-              layout: "vertical",
-              spacing: "sm",
-              contents: [
-                {
-                  type: "button",
-                  style: "primary",
-                  color: "#06C755",
-                  height: "sm",
-                  action: {
-                    type: "message",
-                    label: "💬 สนใจสั่งซื้อ",
-                    text: "สนใจสั่งซื้อสินค้า [รหัส: " + sku + "] " + name
-                  }
-                }
-              ]
-            }
-          };
-
-          // เรียกหน้าต่างเลือกเพื่อนเพื่อส่งการ์ด
           const res = await liff.shareTargetPicker([
             {
               type: "flex",
-              altText: "แชร์สินค้า: " + name,
+              altText: "สินค้า: " + name + " (ราคา " + price + " บาท)",
               contents: flexBubble
             }
           ]);
@@ -179,12 +219,12 @@
             updateStatus("แชร์สำเร็จแล้ว! ✅", "ส่งสินค้าให้เพื่อนเรียบร้อยครับ", true);
             setTimeout(closeApp, 1200);
           } else {
-            // กรณียกเลิก
             closeApp();
           }
         } else {
-          updateStatus("ไม่สามารถแชร์ได้", "อุปกรณ์นี้ยังไม่รองรับ Share Target Picker", true);
+          updateStatus("ไม่สามารถเปิดรายชื่อได้", "กรุณาเปิดสิทธิ์ Share Target Picker ใน LINE Developers", true);
         }
+
       } catch (err) {
         console.error("LIFF Error:", err);
         updateStatus("เกิดข้อผิดพลาด", err.message || "กรุณาลองใหม่อีกครั้ง", true);
